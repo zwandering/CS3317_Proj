@@ -155,7 +155,7 @@ class CDCL_LRB:
         # Find the first-UIP by repeatedly applying resolution.
         learned_clause = set(conflict_ante.copy())
         conflict_side = []
-        reasons = set()
+        reasons = []
 
         while True:
             lits_at_conflict_level = assigned_lits[self.decided_idxs[-1]:]
@@ -169,12 +169,14 @@ class CDCL_LRB:
             while not is_resolved:
                 lit, clause_idx = assignment_tmp.pop()
                 if -lit in learned_clause:
-                    reasons = reasons.union(set(self.sentence[clause_idx]))
-                    learned_clause = set(list(learned_clause) + self.sentence[clause_idx])
+                    reasons = list(set(reasons + self.sentence[clause_idx]))
+                    learned_clause = learned_clause.union(set(self.sentence[clause_idx]))
                     conflict_side.append(lit)
                     conflict_side.append(-lit)
-                    learned_clause.remove(lit)
-                    learned_clause.remove(-lit)
+                    learned_clause.discard(lit)
+                    learned_clause.discard(-lit)
+                    # learned_clause.remove(lit)
+                    # learned_clause.remove(-lit)
                     is_resolved = True
 
         # Order the literals of the learned clause. This is for:
@@ -182,6 +184,10 @@ class CDCL_LRB:
         # 2) watching the negation of the first-UIP and the literal at the backtrack level.
         lit_to_assigned_idx = {lit: assigned_lits.index(-lit) for lit in learned_clause}
         learned_clause = sorted(learned_clause, key=lambda lit: lit_to_assigned_idx[lit])
+
+        # assigned_lits_set = set(assigned_lits)
+        # lit_to_assigned_idx = {lit: assigned_lits.index(-lit) for lit in learned_clause if -lit in assigned_lits_set}
+        # learned_clause = sorted(learned_clause, key=lambda lit: lit_to_assigned_idx[lit])
 
         # Decide the level to backtrack to as the second highest decision level of `learned_clause`.
         if len(learned_clause) == 1:
@@ -191,7 +197,7 @@ class CDCL_LRB:
             backtrack_level = next((level for level, assigned_idx in enumerate(self.decided_idxs) if
                                     assigned_idx > second_highest_assigned_idx), 0)
 
-        return backtrack_level, list(learned_clause), conflict_side, list(reasons)
+        return backtrack_level, list(learned_clause), conflict_side, reasons
 
     def after_conflict_analysis(self, learned_clause, conflict_side, reasons):
         # print(learned_clause)
