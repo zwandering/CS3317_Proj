@@ -151,12 +151,15 @@ def analyze_conflict(sentence, assignment, decided_idxs, conflict_ante):  # NOTE
     else:
         second_highest_assigned_idx = lit_to_assigned_idx[learned_clause[-2]]
         backtrack_level = next((level for level, assigned_idx in enumerate(decided_idxs) if assigned_idx > second_highest_assigned_idx), 0)
-    print(learned_clause)
+    # print(learned_clause)
     return backtrack_level, learned_clause
 
-def backtrack(assignment, decided_idxs, level):
+def backtrack(assignment, decided_idxs, level, learnt_clause):
     """Backtrack by deleting assigned variables."""
-
+    tmp = [a[0] for a in assignment[decided_idxs[level]:]]
+    for lit in learnt_clause:
+        if lit in tmp:
+            print(lit)
     del assignment[decided_idxs[level]:]
     del decided_idxs[level:]
 
@@ -216,7 +219,7 @@ def cdcl(sentence, num_vars):
             if backtrack_level < 0:
                 return None
 
-            backtrack(assignment, decided_idxs, backtrack_level)
+            backtrack(assignment, decided_idxs, backtrack_level, learned_clause)
 
             # Propagate watch.
             conflict_ante = bcp(sentence, assignment, c2l_watch, l2c_watch, len(assignment))
