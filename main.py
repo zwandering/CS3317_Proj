@@ -1,14 +1,11 @@
 import argparse
-from cdcl_lrb1 import  CDCL_LRB
-from cdcl import cdcl
+from cdcl_solver import CDCL_SOLVER
 from utils import read_cnf
 from  check import check
 import time
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", type=str, default="examples/and1.cnf")
-    parser.add_argument('--h', type=str, default='lrb')
-
     return parser.parse_args()
 
 def main(args):
@@ -17,16 +14,9 @@ def main(args):
         sentence, num_vars = read_cnf(f)
     start = time.time()
     # Create CDCL solver and solve it!
-    heuristic = args.h
-
-    if heuristic=='lrb':
-        print('Using heuristic: lrb')
-        a = CDCL_LRB(sentence, num_vars)
-        res = a.run()
-
-    if heuristic=='vsid':
-        print('Using heuristic: vsid')
-        res = cdcl(sentence, num_vars)
+    
+    solver = CDCL_SOLVER(sentence, num_vars)
+    res = solver.run()
 
     end = time.time()
     t = end - start

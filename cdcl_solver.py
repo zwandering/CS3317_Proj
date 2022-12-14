@@ -1,18 +1,38 @@
 import numpy as np
 import time
-class CDCL_LRB:
+class CDCL_SOLVER:
     def __init__(self, sentence, num_vars):
         # Initialize class variables here
-        self.LearntCounter = 0
-        self.alpha = 0.4
         self.sentence = sentence
         self.num_vars = num_vars
         self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.c2l_watch, self.l2c_watch = self.init_watch()
+        self.assignment, self.decided_idxs = [], []
+        self.heuristic = self.decide_vsids
+        self.conflict_limit = 20
+        self.t = 0
+
+        self.vsids_scores = {}
+        self.decay=0.95
+        self.init_vsids_scores()
+        
+        self.LearntCounter = 0
+        self.alpha = 0.4
         self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
+
+    def init(self):
+        self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
+
+        self.vsids_scores = {}
+        self.init_vsids_scores()
+        
+        self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
 
     def on_assign(self, lit):
         self.assigned_v[lit+self.num_vars] = self.LearntCounter
@@ -20,22 +40,76 @@ class CDCL_LRB:
         self.resoned_v[lit+self.num_vars] = 0
 
     def on_unassign(self, literals):
-
         assigned_lits = np.array([a[0] for a in literals])
-        # print(self.changed_lits)
-        # print(assigned_lits)
         interval = self.LearntCounter - self.assigned_v[assigned_lits+self.num_vars]
-        # print(interval)
         r = self.participated_v[assigned_lits+self.num_vars] / (interval+0.00001)
         rsr = self.resoned_v[assigned_lits + self.num_vars] / (interval+0.00001)
         self.q_v[assigned_lits + self.num_vars] = (1.0 - self.alpha) * self.q_v[assigned_lits + self.num_vars] + self.alpha * (r + rsr)
 
-        # for lit in literals:
-        #     interval = self.LearntCounter - self.assigned_v[lit[0]]
-        #     if interval > 0:
-        #         r = float(self.participated_v[lit[0]]) / float(interval)
-        #         rsr = self.resoned_v[lit[0]+self.num_vars]/float(interval)
-        #         self.q_v[lit[0]+self.num_vars] = (1.0 - self.alpha) * self.q_v[lit[0]+self.num_vars] + self.alpha * (r+rsr)
+    def decide_q_v(self):  # NOTE: `assignment` is for filtering assigned literals
+        """Decide which variable to assign and whether to assign True or False."""
+        assigned_lit = None
+
+        # For fast checking if a literal is assigned.
+        assigned_lits = [a[0] for a in self.assignment]
+        unassigned_q_v = self.q_v.copy()
+        for lit in assigned_lits:
+            unassigned_q_v[lit+self.num_vars] = float("-inf")
+            unassigned_q_v[-lit+self.num_vars] = float("-inf")
+        assigned_lit = np.argmax(unassigned_q_v) - self.num_vars
+
+        return assigned_lit
+
+    def after_conflict_analysis(self, learned_clause, conflict_side, reasons):
+        self.LearntCounter = self.LearntCounter + 1
+        tmp1 = np.concatenate((learned_clause, conflict_side))
+        self.participated_v[tmp1 + self.num_vars] = self.participated_v[tmp1 + self.num_vars] + 1.
+        if self.alpha > 0.06:
+            self.alpha = self.alpha - 1e-6
+
+        reasons_lits = np.asarray(reasons)
+        tmp2 = reasons_lits[np.isin(reasons_lits, learned_clause, invert=True)]
+        self.resoned_v[tmp2+self.num_vars] += 1.
+
+        self.changed_lits = np.concatenate((tmp1,tmp2))
+
+        # 使用numpy提高代码运行速度
+        assigned_lits = np.array([a[0] for a in self.assignment])
+        assigned_lits_neg = np.array([-lit for lit in assigned_lits])
+        assigned_lits = np.union1d(assigned_lits, assigned_lits_neg)
+
+        unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
+        self.q_v[unassigned_lits+self.num_vars] = 0.95 * self.q_v[unassigned_lits+self.num_vars]
+
+
+    def init_vsids_scores(self):
+        """Initialize variable scores for VSIDS."""
+        for lit in range(-self.num_vars, self.num_vars + 1):
+            self.vsids_scores[lit] = 0
+        for clause in self.sentence:
+            for lit in clause:
+                self.vsids_scores[lit] += 1
+
+    def decide_vsids(self):  # NOTE: `assignment` is for filtering assigned literals
+        """Decide which variable to assign and whether to assign True or False."""
+        assigned_lit = None
+        # For fast checking if a literal is assigned.
+        assigned_lits = [a[0] for a in self.assignment]
+        unassigned_vsids_scores = self.vsids_scores.copy()
+        for lit in assigned_lits:
+            unassigned_vsids_scores[lit] = float("-inf")
+            unassigned_vsids_scores[-lit] = float("-inf")
+        assigned_lit = max(unassigned_vsids_scores, key=unassigned_vsids_scores.get)
+        return assigned_lit
+
+    def update_vsids_scores(self):
+        """Update VSIDS scores."""
+        for lit in self.learned_clause:
+            self.vsids_scores[lit] += 1
+
+        for lit in self.vsids_scores:
+            self.vsids_scores[lit] = self.vsids_scores[lit] * self.decay
+
 
     def bcp(self, up_idx=0):
         """Propagate unit clauses with watched literals."""
@@ -51,14 +125,16 @@ class CDCL_LRB:
                 if len(watched_lits) == 1 and watched_lits[0] not in assigned_lits:
                     assigned_lits.add(watched_lits[0])
                     self.assignment.append((watched_lits[0], clause_idx))
-                    self.on_assign(watched_lits[0])
+                    if self.heuristic == self.decide_q_v:
+                        self.on_assign(watched_lits[0])
 
         # If it is after conflict analysis, directly assign the literal.
         elif up_idx == len(self.assignment):  # we use `up_idx = len(assignment)` to indicate after-conflict BCP
             neg_first_uip = self.sentence[-1][-1]
             self.assignment.append((neg_first_uip, len(self.sentence) - 1))
             assigned_lits.add(neg_first_uip)
-            self.on_assign(neg_first_uip, )
+            if self.heuristic == self.decide_q_v:
+                self.on_assign(neg_first_uip, )
 
         # Propagate until no more unit clauses.
         while up_idx < len(self.assignment):
@@ -88,37 +164,12 @@ class CDCL_LRB:
                     else:
                         assigned_lits.add(another_lit)
                         self.assignment.append((another_lit, clause_idx))
-                        self.on_assign(another_lit)
+                        if self.heuristic == self.decide_q_v:
+                            self.on_assign(another_lit)
 
             up_idx += 1
 
         return None  # indicate no conflict; other return the antecedent of the conflict
-
-    def decide_q_v(self):  # NOTE: `assignment` is for filtering assigned literals
-        """Decide which variable to assign and whether to assign True or False."""
-        assigned_lit = None
-
-        # For fast checking if a literal is assigned.
-        # for value in self.q_v:
-        #     if value != 0: print(value)
-        assigned_lits = [a[0] for a in self.assignment]
-        unassigned_q_v = self.q_v.copy()
-        for lit in assigned_lits:
-            unassigned_q_v[lit+self.num_vars] = float("-inf")
-            unassigned_q_v[-lit+self.num_vars] = float("-inf")
-        assigned_lit = np.argmax(unassigned_q_v) - self.num_vars
-        # print(assigned_lit, unassigned_q_v[assigned_lit+self.num_vars])
-        # assigned_lit = max(unassigned_q_v, key=unassigned_q_v.get)
-
-        return assigned_lit
-
-    # def update_vsids_scores(vsids_scores, learned_clause, decay=0.95):
-    #     """Update VSIDS scores."""
-    #     for lit in learned_clause:
-    #         vsids_scores[lit] += 1
-    #
-    #     for lit in vsids_scores:
-    #         vsids_scores[lit] = vsids_scores[lit] * decay
 
     def init_watch(self):
         """Initialize the watched literal data structure."""
@@ -198,59 +249,12 @@ class CDCL_LRB:
                                     assigned_idx > second_highest_assigned_idx), 0)
 
         return backtrack_level, list(learned_clause), conflict_side, reasons
-
-    def after_conflict_analysis(self, learned_clause, conflict_side, reasons):
-        # print(learned_clause)
-        self.LearntCounter = self.LearntCounter + 1
-        # print(learned_clause)
-        tmp1 = np.concatenate((learned_clause, conflict_side))
-        # print(tmp1)
-        self.participated_v[tmp1 + self.num_vars] = self.participated_v[tmp1 + self.num_vars] + 1.
-        # for lit in set(learned_clause + conflict_side):
-        #     self.participated_v[lit+self.num_vars] = self.participated_v[lit+self.num_vars] + 1
-        if self.alpha > 0.06:
-            self.alpha = self.alpha - 1e-6
-
-        reasons_lits = np.asarray(reasons)
-        tmp2 = reasons_lits[np.isin(reasons_lits, learned_clause, invert=True)]
-        self.resoned_v[tmp2+self.num_vars] += 1.
-
-        self.changed_lits = np.concatenate((tmp1,tmp2))
-        # for lit in tmp:
-        #     self.resoned_v[lit] = self.resoned_v[lit] + 1
-
-        # reasons_lits = []
-        # for clause_idx in reasons:
-        #     reasons_lits.extend(self.sentence[clause_idx])
-        # reasons_lits = list(set(reasons_lits))
-        # tmp = reasons_lits.copy()
-        # for lit in learned_clause:
-        #     if lit in tmp:
-        #         tmp.remove(lit)
-        # for lit in tmp:
-        #     self.resoned_v[lit] = self.resoned_v[lit] + 1
-
-        # 使用numpy提高代码运行速度
-        assigned_lits = np.array([a[0] for a in self.assignment])
-        assigned_lits_neg = np.array([-lit for lit in assigned_lits])
-        assigned_lits = np.union1d(assigned_lits, assigned_lits_neg)
-
-        unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
-        self.q_v[unassigned_lits+self.num_vars] = 0.95 * self.q_v[unassigned_lits+self.num_vars]
-        # for lit in unassigned_lits:
-        #     self.q_v[lit] = 0.95 * self.q_v[lit]
-
-        # assigned_lits = [a[0] for a in self.assignment]
-        # assigned_lits_neg = [-lit for lit in assigned_lits]
-        # assigned_lits.extend(assigned_lits_neg)
-        # for lit in range(-self.num_vars, self.num_vars+1):
-        #     if lit not in assigned_lits:
-        #         self.q_v[lit] = 0.95 * self.q_v[lit]
-
+    
     def backtrack(self, level):
         """Backtrack by deleting assigned variables."""
         literals = self.assignment[self.decided_idxs[level]:]
-        self.on_unassign(literals)
+        if self.heuristic == self.decide_q_v:
+            self.on_unassign(literals)
         del self.assignment[self.decided_idxs[level]:]
         del self.decided_idxs[level:]
 
@@ -273,14 +277,15 @@ class CDCL_LRB:
             else:
                 break
 
-    def run(self):
+    def __run(self):
         """Run a CDCL solver for the SAT problem.
 
         To simplify the use of data structures, `sentence` is a list of lists where each list
         is a clause. Each clause is a list of literals, where a literal is a signed integer.
         `assignment` is also a list of literals in the order of their assignment.
         """
-        # start = time.time()
+        conflict_count = 0
+
         # Run BCP.
         conflict_ante = self.bcp()
         if conflict_ante is not None:
@@ -289,40 +294,43 @@ class CDCL_LRB:
         # Main loop.
         while len(self.assignment) < self.num_vars:
             # Make a decision.
-            assigned_lit = self.decide_q_v()
+            assigned_lit = self.heuristic()
             self.decided_idxs.append(len(self.assignment))
             self.assignment.append((assigned_lit, None))
-            self.on_assign(assigned_lit)
-
-            # print('time1: '+str(time1-start))
+            if self.heuristic == self.decide_q_v:
+                self.on_assign(assigned_lit)
+            
             # Run BCP.
             conflict_ante = self.bcp(len(self.assignment) - 1)
             while conflict_ante is not None:
                 # Learn conflict.
-                # time1 = time.time()
                 backtrack_level, learned_clause, conflict_side, reasons = self.analyze_conflict(conflict_ante)
-                # time2 = time.time()
-                # print('analyze_conflict time: ' + str(time2 - time1))
-                self.after_conflict_analysis(learned_clause, conflict_side, reasons)
-                # time3 = time.time()
-                # print('after_conflict_analysis time: ' + str(time3 - time2))
+                if self.heuristic == self.decide_q_v:
+                    self.after_conflict_analysis(learned_clause, conflict_side, reasons)
                 self.add_learned_clause(learned_clause)
 
-                # # Update VSIDS scores.
-                # update_vsids_scores(vsids_scores, learned_clause)
+                # Restart
+                conflict_count += 1
+                if conflict_count >= self.conflict_limit:
+                    self.heuristic = self.decide_vsids
+                    return "Restart"
 
                 # Backtrack.
                 if backtrack_level < 0:
+                    self.assignment = None
                     return None
-                # time4 = time.time()
                 self.backtrack(backtrack_level)
-                # time5 =time.time()
-                # print('backtrack_time: '+ str(time5-time4))
-                # print('\n')
 
                 # Propagate watch.
                 conflict_ante = self.bcp(len(self.assignment))
 
         self.assignment = [assigned_lit for assigned_lit, _ in self.assignment]
+        return self.assignment  # indicate SAT
 
+    def run(self):
+        while len(self.assignment) < self.num_vars:
+            if self.__run() == "Restart":
+                self.t += 1
+                print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
+                self.init()
         return self.assignment  # indicate SAT

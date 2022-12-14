@@ -1,4 +1,3 @@
-from cdcl import cdcl
 from utils import read_cnf
 import argparse
 
