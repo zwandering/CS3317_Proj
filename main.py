@@ -1,6 +1,5 @@
 import argparse
-from cdcl_lrb1 import  CDCL_LRB
-from cdcl import cdcl
+from cdcl_lrb import  CDCL_LRB
 from utils import read_cnf
 from  check import check
 
@@ -19,8 +18,7 @@ def main(args):
 
     # Create CDCL solver and solve it!
     cdcl = CDCL_LRB(sentence, num_vars)
-    res = cdcl.run()
-    # res = cdcl(sentence, num_vars)
+    res = cdcl.cdcl()
 
     if res is None:
         print("✘ No solution found")

@@ -1,8 +1,9 @@
+import numpy as np
 def bcp(sentence, assignment, c2l_watch, l2c_watch, up_idx=0):  # NOTE: `up_idx` is for recording which assignment triggers the BCP
     """Propagate unit clauses with watched literals."""
 
     # For fast checking if a literal is assigned.
-    assigned_lits = [a[0] for a in assignment]
+    assigned_lits = set([a[0] for a in assignment])
 
     # If the assignment is empty, try BCP.
     if len(assignment) == 0:
@@ -10,14 +11,14 @@ def bcp(sentence, assignment, c2l_watch, l2c_watch, up_idx=0):  # NOTE: `up_idx`
 
         for clause_idx, watched_lits in c2l_watch.items():
             if len(watched_lits) == 1:
-                assigned_lits.append(watched_lits[0])
+                assigned_lits.add(watched_lits[0])
                 assignment.append((watched_lits[0], clause_idx))
 
     # If it is after conflict analysis, directly assign the literal.
     elif up_idx == len(assignment):  # we use `up_idx = len(assignment)` to indicate after-conflict BCP
         neg_first_uip = sentence[-1][-1]
         assignment.append((neg_first_uip, len(sentence) - 1))
-        assigned_lits.append(neg_first_uip)
+        assigned_lits.add(neg_first_uip)
 
     # Propagate until no more unit clauses.
     while up_idx < len(assignment):
@@ -45,7 +46,7 @@ def bcp(sentence, assignment, c2l_watch, l2c_watch, up_idx=0):  # NOTE: `up_idx`
                 if -another_lit in assigned_lits:
                     return sentence[clause_idx]  # NOTE: return a clause, not the index of a clause
                 else:
-                    assigned_lits.append(another_lit)
+                    assigned_lits.add(another_lit)
                     assignment.append((another_lit, clause_idx))
 
         up_idx += 1
@@ -150,7 +151,7 @@ def analyze_conflict(sentence, assignment, decided_idxs, conflict_ante):  # NOTE
     else:
         second_highest_assigned_idx = lit_to_assigned_idx[learned_clause[-2]]
         backtrack_level = next((level for level, assigned_idx in enumerate(decided_idxs) if assigned_idx > second_highest_assigned_idx), 0)
-
+    print(learned_clause)
     return backtrack_level, learned_clause
 
 def backtrack(assignment, decided_idxs, level):
