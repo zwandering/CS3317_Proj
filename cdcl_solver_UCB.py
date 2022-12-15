@@ -13,6 +13,7 @@ class CDCL_SOLVER:
         self.t = 0                          # 重启次数t
         self.reward = {}                    # 每种heuristic对应的reward
         self.UCB1 = {}                      # 每种heuristic对应的UCB1
+        self.MOSS = {}                      # 每种heuristic对应的MOSS
         self.n = {}                         # 每种heuristic选择的次数
 
         # vsids需要的变量
@@ -125,13 +126,27 @@ class CDCL_SOLVER:
         self.UCB1[1] = 0
 
     def update_UCB1(self):
-        #print("reward:", self.reward)
         print("UCB1:", self.UCB1)
         t_len = len(str(self.t))
         t = float(self.t / (10**t_len))
         t += 4
         self.UCB1[0] = self.reward[0] + np.sqrt(t/self.n[0])
         self.UCB1[1] = self.reward[1] + np.sqrt(t/self.n[1])
+    
+    def init_MOSS(self):
+        self.MOSS[0] = 0
+        self.MOSS[1] = 0
+
+    def update_MOSS(self):
+        print("MOSS:", self.MOSS)
+        n_len_0 = len(str(self.n[0]))
+        n_len_1 = len(str(self.n[1]))
+        n_0 = float(self.n[0] / (10**n_len_0))
+        n_1 = float(self.n[1] / (10**n_len_1))
+        n_0 += 2
+        n_1 += 2
+        self.MOSS[0] = self.reward[0] + np.sqrt((4/self.n[0])*np.log(np.max([1., self.t/n_0])))
+        self.MOSS[1] = self.reward[1] + np.sqrt((4/self.n[1])*np.log(np.max([1., self.t/n_1])))
 
     def init_reward(self):
         self.reward[0] = 0
@@ -140,7 +155,7 @@ class CDCL_SOLVER:
     def update_reward(self, decisions_t, decidedVars_t):
         a = 0
         if str(self.heuristic.__name__) == "decide_q_v":
-            a = 0
+            a = 1
         if str(self.heuristic.__name__) == "decide_vsids":
             a = 0
         self.reward[a] = (np.log2(decisions_t)/decidedVars_t - self.reward[a]) / self.t
@@ -369,6 +384,7 @@ class CDCL_SOLVER:
         # 最初先运行一次lrb与vsids，更新reward
         self.init_reward()
         self.init_UCB1()
+        self.init_MOSS()
         self.n[0] = 1
         self.n[1] = 1
         self.t += 1
@@ -376,19 +392,24 @@ class CDCL_SOLVER:
         print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
         self.__run()
         self.update_UCB1()
-        self.init()
+        self.update_MOSS()
+        
         if len(self.assignment) < self.num_vars:        
+            self.init()
             self.t += 1
             self.heuristic = self.decide_vsids
             print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
             self.__run()
             self.update_UCB1()
+            self.update_MOSS()
+        if len(self.assignment) < self.num_vars:
             self.init()
 
         # 接下来按照UCB1值选择heuristic并__run，直到解出
         while len(self.assignment) < self.num_vars:
             self.t += 1
-            h = np.argmax(self.UCB1)
+            #h = np.argmax(self.UCB1)
+            h = np.argmax(self.MOSS)
             if h == 0: self.heuristic = self.decide_vsids
             if h == 1: self.heuristic = self.decide_q_v
             print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
@@ -396,5 +417,6 @@ class CDCL_SOLVER:
             if res == None: return None
             if res == "Restart":
                 self.update_UCB1()
+                self.update_MOSS()
                 self.init()
         return self.assignment  # indicate SAT

@@ -316,7 +316,7 @@ class CDCL_SOLVER:
                         self.heuristic = self.decide_vsids
                         return "Restart"
                     if self.heuristic == self.decide_vsids:
-                        self.heuristic = self.decide_q_v
+                        self.heuristic = self.decide_vsids
                         return "Restart"
 
                 # Backtrack.

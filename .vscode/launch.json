@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "main.py",
             "args": [
-                "-i", "examples/bmc-2.cnf"
+                "-i", "examples/bmc-1.cnf"
             ],
             "console": "integratedTerminal",
             "justMyCode": true
