@@ -11,6 +11,9 @@ class CDCL_SOLVER:
         self.heuristic = self.decide_vsids
         self.conflict_limit = 20
         self.t = 0
+        self.reward = {}
+        self.UCB1 = {}
+        self.n = {}
 
         self.vsids_scores = {}
         self.decay=0.95
@@ -110,6 +113,31 @@ class CDCL_SOLVER:
         for lit in self.vsids_scores:
             self.vsids_scores[lit] = self.vsids_scores[lit] * self.decay
 
+
+    def init_UCB1(self):
+        self.UCB1[0] = 0
+        self.UCB1[1] = 0
+
+    def update_UCB1(self):
+        #print("reward:", self.reward)
+        print("UCB1:", self.UCB1)
+        t_len = len(str(self.t))
+        t = float(self.t / (10**t_len))
+        t += 4
+        self.UCB1[0] = self.reward[0] + np.sqrt(t/self.n[0])
+        self.UCB1[1] = self.reward[1] + np.sqrt(t/self.n[1])
+
+    def init_reward(self):
+        self.reward[0] = 0
+        self.reward[1] = 0
+
+    def update_reward(self, decisions_t, decidedVars_t):
+        a = 0
+        if str(self.heuristic.__name__) == "decide_q_v":
+            a = 0
+        if str(self.heuristic.__name__) == "decide_vsids":
+            a = 0
+        self.reward[a] = (np.log2(decisions_t)/decidedVars_t - self.reward[a]) / self.t
 
     def bcp(self, up_idx=0):
         """Propagate unit clauses with watched literals."""
@@ -285,6 +313,8 @@ class CDCL_SOLVER:
         `assignment` is also a list of literals in the order of their assignment.
         """
         conflict_count = 0
+        decisions_t = 0
+        decidedVars_t = 0
 
         # Run BCP.
         conflict_ante = self.bcp()
@@ -294,6 +324,7 @@ class CDCL_SOLVER:
         # Main loop.
         while len(self.assignment) < self.num_vars:
             # Make a decision.
+            decisions_t += 1
             assigned_lit = self.heuristic()
             self.decided_idxs.append(len(self.assignment))
             self.assignment.append((assigned_lit, None))
@@ -312,12 +343,9 @@ class CDCL_SOLVER:
                 # Restart
                 conflict_count += 1
                 if conflict_count >= self.conflict_limit:
-                    if self.heuristic == self.decide_q_v:
-                        self.heuristic = self.decide_vsids
-                        return "Restart"
-                    if self.heuristic == self.decide_vsids:
-                        self.heuristic = self.decide_q_v
-                        return "Restart"
+                    decidedVars_t = len(self.assignment)
+                    self.update_reward(decisions_t, decidedVars_t)
+                    return "Restart"
 
                 # Backtrack.
                 if backtrack_level < 0:
@@ -332,9 +360,33 @@ class CDCL_SOLVER:
         return self.assignment  # indicate SAT
 
     def run(self):
+        self.init_reward()
+        self.init_UCB1()
+        self.n[0] = 1
+        self.n[1] = 1
+        self.t += 1
+        self.heuristic = self.decide_q_v
+        print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
+        self.__run()
+        self.update_UCB1()
+        self.init()
+        if len(self.assignment) < self.num_vars:        
+            self.t += 1
+            self.heuristic = self.decide_vsids
+            print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
+            self.__run()
+            self.update_UCB1()
+            self.init()
+
         while len(self.assignment) < self.num_vars:
-            if self.__run() == "Restart":
-                self.t += 1
-                print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
+            self.t += 1
+            h = np.argmax(self.UCB1)
+            if h == 0: self.heuristic = self.decide_vsids
+            if h == 1: self.heuristic = self.decide_q_v
+            print("restart:", self.t, "with heuristic: ", self.heuristic.__name__)
+            res = self.__run()
+            if res == None: return None
+            if res == "Restart":
+                self.update_UCB1()
                 self.init()
         return self.assignment  # indicate SAT

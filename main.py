@@ -1,5 +1,6 @@
 import argparse
-from cdcl_solver import CDCL_SOLVER
+from cdcl_solver_UCB import CDCL_SOLVER
+#from cdcl_solver import CDCL_SOLVER
 from utils import read_cnf
 from  check import check
 import time
