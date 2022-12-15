@@ -1,5 +1,6 @@
 import argparse
-from cdcl_solver_UCB import CDCL_SOLVER
+from cdcl_solver_restart import CDCL_SOLVER
+#from cdcl_solver_UCB import CDCL_SOLVER
 #from cdcl_solver import CDCL_SOLVER
 from utils import read_cnf
 from  check import check
@@ -18,6 +19,7 @@ def main(args):
     
     solver = CDCL_SOLVER(sentence, num_vars)
     res = solver.run()
+    #res = solver.run_without_UCB(0)
 
     end = time.time()
     t = end - start
