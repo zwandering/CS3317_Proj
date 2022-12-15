@@ -1,5 +1,6 @@
 import argparse
 from cdcl_lrb1 import  CDCL_LRB
+from cdcl_chb import  CDCL_CHB
 from cdcl import cdcl
 from utils import read_cnf
 from  check import check
@@ -22,6 +23,11 @@ def main(args):
     if heuristic=='lrb':
         print('Using heuristic: lrb')
         a = CDCL_LRB(sentence, num_vars)
+        res = a.run()
+
+    if heuristic=='chb':
+        print('Using heuristic: chb')
+        a = CDCL_CHB(sentence, num_vars)
         res = a.run()
 
     if heuristic=='vsid':

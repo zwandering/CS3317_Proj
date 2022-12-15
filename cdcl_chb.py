@@ -1,10 +1,11 @@
 import numpy as np
 import time
-class CDCL_LRB:
+class CDCL_CHB:
     def __init__(self, sentence, num_vars):
         # Initialize class variables here
-        self.LearntCounter = 0
+        self.num_conflicts = 0
         self.alpha = 0.4
+        self.multi = 1.0
         self.sentence = sentence
         self.num_vars = num_vars
         self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
@@ -15,28 +16,33 @@ class CDCL_LRB:
         self.assignment, self.decided_idxs = [], []
         self.assigned_lits = set()
 
-    def on_assign(self, lit):
-        self.assigned_v[lit+self.num_vars] = self.LearntCounter
-        self.participated_v[lit+self.num_vars] = 0
-        self.resoned_v[lit+self.num_vars] = 0
+    def update_q_v(self):
+        plays  = np.asarray(list(self.assigned_lits))
+        reward = self.multi / (self.num_conflicts - self.assigned_v[plays+self.num_vars]+1)
+        self.q_v[plays + self.num_vars] = (1.-self.alpha)*self.q_v[plays+self.num_vars]+self.alpha*reward
+    # def on_assign(self, lit):
+    #     self.assigned_v[lit+self.num_vars] = self.num_conflicts
+    #     self.participated_v[lit+self.num_vars] = 0
+    #     self.resoned_v[lit+self.num_vars] = 0
 
-    def on_unassign(self, literals):
+    # def on_unassign(self, literals):
+    #
+    #     assigned_lits = np.array([a[0] for a in literals])
+    #     # print(self.changed_lits)
+    #     # print(assigned_lits)
+    #     interval = self.num_conflicts - self.assigned_v[assigned_lits+self.num_vars]
+    #     # print(interval)
+    #     r = self.participated_v[assigned_lits+self.num_vars] / (interval+0.00001)
+    #     rsr = self.resoned_v[assigned_lits + self.num_vars] / (interval+0.00001)
+    #     self.q_v[assigned_lits + self.num_vars] = (1.0 - self.alpha) * self.q_v[assigned_lits + self.num_vars] + self.alpha * (r + rsr)
+    #
+    #     # for lit in literals:
+    #     #     interval = self.num_conflicts - self.assigned_v[lit[0]]
+    #     #     if interval > 0:
+    #     #         r = float(self.participated_v[lit[0]]) / float(interval)
+    #     #         rsr = self.resoned_v[lit[0]+self.num_vars]/float(interval)
+    #     #         self.q_v[lit[0]+self.num_vars] = (1.0 - self.alpha) * self.q_v[lit[0]+self.num_vars] + self.alpha * (r+rsr)
 
-        assigned_lits = np.asarray(list(self.assigned_lits))
-        # print(self.changed_lits)
-        # print(assigned_lits)
-        interval = self.LearntCounter - self.assigned_v[assigned_lits+self.num_vars]
-        # print(interval)
-        r = self.participated_v[assigned_lits+self.num_vars] / (interval+0.00001)
-        rsr = self.resoned_v[assigned_lits + self.num_vars] / (interval+0.00001)
-        self.q_v[assigned_lits + self.num_vars] = (1.0 - self.alpha) * self.q_v[assigned_lits + self.num_vars] + self.alpha * (r + rsr)
-
-        # for lit in literals:
-        #     interval = self.LearntCounter - self.assigned_v[lit[0]]
-        #     if interval > 0:
-        #         r = float(self.participated_v[lit[0]]) / float(interval)
-        #         rsr = self.resoned_v[lit[0]+self.num_vars]/float(interval)
-        #         self.q_v[lit[0]+self.num_vars] = (1.0 - self.alpha) * self.q_v[lit[0]+self.num_vars] + self.alpha * (r+rsr)
 
     def bcp(self, up_idx=0):
         """Propagate unit clauses with watched literals."""
@@ -52,14 +58,14 @@ class CDCL_LRB:
                 if len(watched_lits) == 1 and watched_lits[0] not in self.assigned_lits:
                     self.assigned_lits.add(watched_lits[0])
                     self.assignment.append((watched_lits[0], clause_idx))
-                    self.on_assign(watched_lits[0])
+                    # self.on_assign(watched_lits[0])
 
         # If it is after conflict analysis, directly assign the literal.
         elif up_idx == len(self.assignment):  # we use `up_idx = len(assignment)` to indicate after-conflict BCP
             neg_first_uip = self.sentence[-1][-1]
             self.assignment.append((neg_first_uip, len(self.sentence) - 1))
             self.assigned_lits.add(neg_first_uip)
-            self.on_assign(neg_first_uip, )
+            # self.on_assign(neg_first_uip, )
 
         # Propagate until no more unit clauses.
         while up_idx < len(self.assignment):
@@ -89,7 +95,7 @@ class CDCL_LRB:
                     else:
                         self.assigned_lits.add(another_lit)
                         self.assignment.append((another_lit, clause_idx))
-                        self.on_assign(another_lit)
+                        # self.on_assign(another_lit)
 
             up_idx += 1
 
@@ -107,6 +113,7 @@ class CDCL_LRB:
                 scores[lit] += 1
 
         return scores
+
     def decide_q_v(self):  # NOTE: `assignment` is for filtering assigned literals
         """Decide which variable to assign and whether to assign True or False."""
         assigned_lit = None
@@ -219,59 +226,11 @@ class CDCL_LRB:
 
         return backtrack_level, list(learned_clause), conflict_side, list(reasons)
 
-    def after_conflict_analysis(self, learned_clause, conflict_side, reasons):
-        # print(learned_clause)
-        self.LearntCounter = self.LearntCounter + 1
-        # print(learned_clause)
-        tmp1 = np.concatenate((learned_clause, conflict_side))
-        # print(tmp1)
-        self.participated_v[tmp1 + self.num_vars] = self.participated_v[tmp1 + self.num_vars] + 1.
-        # for lit in set(learned_clause + conflict_side):
-        #     self.participated_v[lit+self.num_vars] = self.participated_v[lit+self.num_vars] + 1
-        if self.alpha > 0.06:
-            self.alpha = self.alpha - 1e-6
-
-        reasons_lits = np.asarray(reasons)
-        tmp2 = reasons_lits[np.isin(reasons_lits, learned_clause, invert=True)] # 此处可以改为in1d可能会快一点
-        # tmp2 = np.in1d(reasons_lits, learned_clause, invert=True)
-        # print(tmp2+self.num_vars)
-        self.resoned_v[tmp2+self.num_vars] += 1.
-
-        # for lit in tmp:
-        #     self.resoned_v[lit] = self.resoned_v[lit] + 1
-
-        # reasons_lits = []
-        # for clause_idx in reasons:
-        #     reasons_lits.extend(self.sentence[clause_idx])
-        # reasons_lits = list(set(reasons_lits))
-        # tmp = reasons_lits.copy()
-        # for lit in learned_clause:
-        #     if lit in tmp:
-        #         tmp.remove(lit)
-        # for lit in tmp:
-        #     self.resoned_v[lit] = self.resoned_v[lit] + 1
-
-        # 使用numpy提高代码运行速度
-        assigned_lits = np.asarray(list(self.assigned_lits))
-        assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
-        # assigned_lits = np.union1d(assigned_lits, -assigned_lits)
-
-        unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
-        self.q_v[unassigned_lits] = 0.95 * self.q_v[unassigned_lits]
-        # for lit in unassigned_lits:
-        #     self.q_v[lit] = 0.95 * self.q_v[lit]
-
-        # assigned_lits = [a[0] for a in self.assignment]
-        # assigned_lits_neg = [-lit for lit in assigned_lits]
-        # assigned_lits.extend(assigned_lits_neg)
-        # for lit in range(-self.num_vars, self.num_vars+1):
-        #     if lit not in assigned_lits:
-        #         self.q_v[lit] = 0.95 * self.q_v[lit]
 
     def backtrack(self, level):
         """Backtrack by deleting assigned variables."""
         literals = self.assignment[self.decided_idxs[level]:]
-        self.on_unassign(literals)
+        # self.on_unassign(literals)
         del self.assignment[self.decided_idxs[level]:]
         del self.decided_idxs[level:]
 
@@ -313,18 +272,23 @@ class CDCL_LRB:
             assigned_lit = self.decide_q_v()
             self.decided_idxs.append(len(self.assignment))
             self.assignment.append((assigned_lit, None))
-            self.on_assign(assigned_lit)
+            # self.on_assign(assigned_lit)
 
             # print('time1: '+str(time1-start))
             # Run BCP.
             conflict_ante = self.bcp(len(self.assignment) - 1)
+            if conflict_ante is None: self.multi = 0.9
+            self.update_q_v()
             while conflict_ante is not None:
+                self.multi = 1.0
+                self.num_conflicts +=1
+                if self.alpha > 0.06: self.alpha -= 1e-6
                 # Learn conflict.
                 # time1 = time.time()
                 backtrack_level, learned_clause, conflict_side, reasons = self.analyze_conflict(conflict_ante)
                 # time2 = time.time()
                 # print('analyze_conflict time: ' + str(time2 - time1))
-                self.after_conflict_analysis(learned_clause, conflict_side, reasons)
+                # self.after_conflict_analysis(learned_clause, conflict_side, reasons)
                 # time3 = time.time()
                 # print('after_conflict_analysis time: ' + str(time3 - time2))
                 self.add_learned_clause(learned_clause)
@@ -343,6 +307,7 @@ class CDCL_LRB:
 
                 # Propagate watch.
                 conflict_ante = self.bcp(len(self.assignment))
+                self.update_q_v()
 
         self.assignment = [assigned_lit for assigned_lit, _ in self.assignment]
 
