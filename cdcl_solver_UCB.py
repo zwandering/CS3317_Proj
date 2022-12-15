@@ -8,17 +8,19 @@ class CDCL_SOLVER:
         self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
-        self.heuristic = self.decide_vsids
-        self.conflict_limit = 20
-        self.t = 0
-        self.reward = {}
-        self.UCB1 = {}
-        self.n = {}
+        self.heuristic = self.decide_vsids  # 函数指针，指向选择的heuristic函数
+        self.conflict_limit = 20            # 冲突上界，超过这个冲突次数就重启
+        self.t = 0                          # 重启次数t
+        self.reward = {}                    # 每种heuristic对应的reward
+        self.UCB1 = {}                      # 每种heuristic对应的UCB1
+        self.n = {}                         # 每种heuristic选择的次数
 
+        # vsids需要的变量
         self.vsids_scores = {}
         self.decay=0.95
         self.init_vsids_scores()
         
+        # lrb需要的变量
         self.LearntCounter = 0
         self.alpha = 0.4
         self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
@@ -37,6 +39,8 @@ class CDCL_SOLVER:
         self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
 
+
+    # lrb独占函数
     def on_assign(self, lit):
         self.assigned_v[lit+self.num_vars] = self.LearntCounter
         self.participated_v[lit+self.num_vars] = 0
@@ -85,6 +89,7 @@ class CDCL_SOLVER:
         self.q_v[unassigned_lits+self.num_vars] = 0.95 * self.q_v[unassigned_lits+self.num_vars]
 
 
+    # vsids独占函数
     def init_vsids_scores(self):
         """Initialize variable scores for VSIDS."""
         for lit in range(-self.num_vars, self.num_vars + 1):
@@ -114,6 +119,7 @@ class CDCL_SOLVER:
             self.vsids_scores[lit] = self.vsids_scores[lit] * self.decay
 
 
+    # 共享函数
     def init_UCB1(self):
         self.UCB1[0] = 0
         self.UCB1[1] = 0
@@ -312,9 +318,9 @@ class CDCL_SOLVER:
         is a clause. Each clause is a list of literals, where a literal is a signed integer.
         `assignment` is also a list of literals in the order of their assignment.
         """
-        conflict_count = 0
-        decisions_t = 0
-        decidedVars_t = 0
+        conflict_count = 0  # 这次__run的冲突计数
+        decisions_t = 0     # 使用heuristic次数
+        decidedVars_t = 0   # 本次__run推出的变量的数量
 
         # Run BCP.
         conflict_ante = self.bcp()
@@ -341,10 +347,10 @@ class CDCL_SOLVER:
                 self.add_learned_clause(learned_clause)
 
                 # Restart
-                conflict_count += 1
-                if conflict_count >= self.conflict_limit:
-                    decidedVars_t = len(self.assignment)
-                    self.update_reward(decisions_t, decidedVars_t)
+                conflict_count += 1                                 # 冲突计数加一
+                if conflict_count >= self.conflict_limit:           # 达到冲突上限
+                    decidedVars_t = len(self.assignment)            
+                    self.update_reward(decisions_t, decidedVars_t)  # 增量更新reward
                     return "Restart"
 
                 # Backtrack.
@@ -360,6 +366,7 @@ class CDCL_SOLVER:
         return self.assignment  # indicate SAT
 
     def run(self):
+        # 最初先运行一次lrb与vsids，更新reward
         self.init_reward()
         self.init_UCB1()
         self.n[0] = 1
@@ -378,6 +385,7 @@ class CDCL_SOLVER:
             self.update_UCB1()
             self.init()
 
+        # 接下来按照UCB1值选择heuristic并__run，直到解出
         while len(self.assignment) < self.num_vars:
             self.t += 1
             h = np.argmax(self.UCB1)
