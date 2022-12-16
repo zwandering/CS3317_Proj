@@ -166,7 +166,7 @@ class CDCL_LRB:
         # Check whether the conflict happens without making any decision.
         assignment_tmp = self.assignment.copy()
         if len(self.decided_idxs) == 0:
-            return -1, [], []
+            return -1, [], [], []
 
         # For fast checking if a literal is assigned.
         assigned_lits = [a[0] for a in assignment_tmp]
