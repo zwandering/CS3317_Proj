@@ -105,6 +105,7 @@ class CDCL_SOLVER:
         for clause in self.sentence:
             for lit in clause:
                 self.vsids_scores[lit] += 1
+        return self.vsids_scores
 
     def decide_vsids(self):  # NOTE: `assignment` is for filtering assigned literals
         """Decide which variable to assign and whether to assign True or False."""
@@ -329,7 +330,7 @@ class CDCL_SOLVER:
                 self.conflict += 1
                 if self.conflict >= self.conflict_limit:
                     reward = np.log2(self.decisions) / len(self.assignment)
-
+                    print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
                     self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
                     self.c2l_watch, self.l2c_watch = self.init_watch()
                     self.assignment, self.decided_idxs = [], []
