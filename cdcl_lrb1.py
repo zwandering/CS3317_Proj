@@ -351,7 +351,7 @@ class CDCL_LRB:
                 backtrack_level, learned_clause, conflict_side, reasons = self.analyze_conflict(conflict_ante)
                 # time2 = time.time()
                 # print('analyze_conflict time: ' + str(time2 - time1))
-                self.after_conflict_analysis(learned_clause, conflict_side, reasons)
+                if backtrack_level!=-1: self.after_conflict_analysis(learned_clause, conflict_side, reasons)
                 # time3 = time.time()
                 # print('after_conflict_analysis time: ' + str(time3 - time2))
                 self.add_learned_clause(learned_clause)
