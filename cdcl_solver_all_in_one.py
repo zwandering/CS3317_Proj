@@ -18,7 +18,7 @@ class CDCL_SOLVER:
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
         self.assigned_lits = set()
-        self.conflict_limit = 20
+        self.conflict_limit = 2000000
         self.conflict = 0
         self.decisions = 0
 
@@ -67,7 +67,8 @@ class CDCL_SOLVER:
         self.resoned_v[lit+self.num_vars] = 0
 
     def on_unassign(self, literals):
-        assigned_lits = np.asarray(list(self.assigned_lits))
+        lits = [a[0] for a in literals]
+        assigned_lits = np.asarray(lits)
         interval = self.LearntCounter - self.assigned_v[assigned_lits+self.num_vars]
         r = self.participated_v[assigned_lits+self.num_vars] / (interval+0.00001)
         rsr = self.resoned_v[assigned_lits + self.num_vars] / (interval+0.00001)
