@@ -3,12 +3,33 @@ import time
 
 class CDCL_SOLVER:
     def __init__(self, sentence, num_vars):
+        # MLR
+        self.mlr_alpha = 0.001
+        self.mlr_epsilon = 0.00000001
+        self.mlr_beta_1 = 0.9
+        self.mlr_beta_2 = 0.999
+        self.mlr_conflicts_since_last_restart = 0
+        self.mlr_t = 0
+        self.mlr_prevLbd_3 = 0
+        self.mlr_prevLbd_2 = 0
+        self.mlr_prevLbd_1 = 0
+        self.mlr_mu = 0
+        self.mlr_m2 = 0
+
+        len_fv = len(self.mlr_feature_vector())
+        self.mlr_theta = np.zeros(len_fv, dtype=float)
+        self.mlr_m = np.zeros(len_fv, dtype=float)
+        self.mlr_v = np.zeros(len_fv, dtype=float)
+
+
+        # UCB
         self.reward = np.zeros(3,dtype=float)
         self.UCB1 = np.zeros(3,dtype=float)
         self.MOSS = np.zeros(3,dtype=float)
         self.n = np.ones(3,dtype=float)
-        self.solver = "vsids"
-        self.heuristic = self.decide_vsids
+        self.UCB = "MOSS"
+        self.solver = "lrb"
+        self.heuristic = self.decide_q_v
         self.t = 1
 
         # Initialize class variables here
@@ -40,6 +61,68 @@ class CDCL_SOLVER:
         self.vsids_scores = {}
         self.decay=0.95
         self.init_vsids_scores()
+
+    def mlr_feature_vector(self):
+        return list([1, self.mlr_prevLbd_1, self.mlr_prevLbd_2, self.mlr_prevLbd_3, self.mlr_prevLbd_1*self.mlr_prevLbd_2, self.mlr_prevLbd_1*self.mlr_prevLbd_3, self.mlr_prevLbd_2*self.mlr_prevLbd_3])
+
+    def mlr_after_conflict(self, learned_clause):
+        self.mlr_conflicts_since_last_restart += 1
+        nextLdb = self.mlr_Ldb(learned_clause)
+        delta = nextLdb - self.mlr_mu
+        self.mlr_mu = self.mlr_mu + delta / self.conflict
+        Delta = nextLdb - self.mlr_mu
+        self.mlr_m2 = self.mlr_m2 + delta * Delta
+
+        if self.conflict > 3:
+            self.mlr_t += 1
+            features = self.mlr_feature_vector()
+            predict = self.mlr_theta * features
+            error = predict - nextLdb
+            g = error * features
+            self.mlr_m = self.mlr_beta_1 * self.mlr_m + (1-self.mlr_beta_1) * g
+            self.mlr_v = self.mlr_beta_2 * self.mlr_v + (1-self.mlr_beta_2) * g * g
+            m_hat = self.mlr_m / (1 - self.mlr_beta_1**self.mlr_t)
+            v_hat = self.mlr_v / (1 - self.mlr_beta_2**self.mlr_t)
+            self.mlr_theta = self.mlr_theta - self.mlr_alpha * m_hat / (np.sqrt(v_hat)+self.mlr_epsilon)
+        
+        self.mlr_prevLbd_3 = self.mlr_prevLbd_2
+        self.mlr_prevLbd_2 = self.mlr_prevLbd_1
+        self.mlr_prevLbd_1 = nextLdb
+
+    def mlr_after_BCP(self, is_conflict):
+        if (is_conflict) and (self.conflict > 3) and (self.mlr_conflicts_since_last_restart > 0):
+            sigma = np.sqrt(self.mlr_m2/(self.conflict - 1))
+            feature_vector = self.mlr_feature_vector()
+            val = 0
+            for i in range(len(self.mlr_theta)):
+                val += self.mlr_theta[i] * feature_vector[len(feature_vector) - 1 - i]
+            
+            if val > self.mlr_mu + 3.08 * sigma:
+                return True
+        return False
+
+    def mlr_Ldb(self, learned_clause):
+        def get_level(lit):
+            assignment_tmp = self.assignment.copy()
+            assigned_lits = [a[0] for a in assignment_tmp]
+            lit_to_assigned_idx = {lit: assigned_lits.index(-lit) for lit in learned_clause}
+            lit_idx = lit_to_assigned_idx[lit]
+            level = next((level for level, assigned_idx in enumerate(self.decided_idxs) if
+                                    assigned_idx > lit_idx), 0)
+            return level
+        level_list = set()
+        max_list = set()
+        for lit in learned_clause:
+            level = get_level(lit)
+            level_list.add(level)
+        level_list = list(level_list)
+        for i in range(len(level_list)):
+            for j in range(len(level_list)):
+                max_list.add(abs(level_list[i]-level_list[j]))
+        max_list = list(max_list)
+        return np.max(max_list)
+        
+        
 
     # lrb & chb
     def decide_q_v(self):  # NOTE: `assignment` is for filtering assigned literals
@@ -127,6 +210,7 @@ class CDCL_SOLVER:
         for lit in self.vsids_scores:
             self.vsids_scores[lit] = self.vsids_scores[lit] * self.decay
 
+    
     # share
     def init_watch(self):
         """Initialize the watched literal data structure."""
@@ -207,7 +291,7 @@ class CDCL_SOLVER:
             up_idx += 1
 
         return None  # indicate no conflict; other return the antecedent of the conflict
-
+  
     def analyze_conflict(self, conflict_ante):  # NOTE: `sentence` is for resolution
         """Analyze the conflict with first-UIP clause learning."""
         backtrack_level, learned_clause = None, []
@@ -288,6 +372,29 @@ class CDCL_SOLVER:
             else:
                 break
 
+    def renew(self):
+        self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.c2l_watch, self.l2c_watch = self.init_watch()
+        self.assignment, self.decided_idxs = [], []
+        self.assigned_lits = set()
+        self.conflict_limit = 20
+        self.conflict = 0
+        self.decisions = 0
+        # lrb & chb
+        self.alpha = 0.4
+        self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
+        self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
+        # lrb
+        self.LearntCounter = 0
+        # chb
+        self.num_conflicts = 0
+        self.multi = 1.0
+        # vsids
+        self.vsids_scores = {}
+        self.decay=0.95
+        self.init_vsids_scores()
+
     def _run(self):
         """Run a CDCL solver for the SAT problem.
 
@@ -326,40 +433,9 @@ class CDCL_SOLVER:
                     if backtrack_level!=-1: self.after_conflict_analysis(learned_clause, conflict_side, reasons)
                 self.add_learned_clause(learned_clause)
 
-                # Restart
                 self.conflict += 1
-                if self.conflict >= self.conflict_limit:
-                    reward = np.log2(self.decisions) / len(self.assignment)
-                    print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
-                    self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
-                    self.c2l_watch, self.l2c_watch = self.init_watch()
-                    self.assignment, self.decided_idxs = [], []
-                    self.assigned_lits = set()
-                    self.conflict_limit = 20
-                    self.conflict = 0
-                    self.decisions = 0
-
-
-                    # lrb & chb
-                    self.alpha = 0.4
-                    self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
-                    self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
-                    self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
-
-                    # lrb
-                    self.LearntCounter = 0
-
-                    # chb
-                    self.num_conflicts = 0
-                    self.multi = 1.0
-
-                    # vsids
-                    self.vsids_scores = {}
-                    self.decay=0.95
-                    self.init_vsids_scores()
-                    
-                    return reward
-
+                self.mlr_after_conflict(learned_clause)
+                
                 # Backtrack.
                 if backtrack_level < 0:
                     return None
@@ -370,17 +446,28 @@ class CDCL_SOLVER:
                 if self.solver == "chb":
                     self.update_q_v()
 
+                # Restart                
+                if conflict_ante is not None:
+                    if self.mlr_after_BCP(True):
+                        reward = np.log2(self.decisions) / len(self.assignment)
+                        print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
+                        self.renew()                    
+                        return reward
+
         self.assignment = [assigned_lit for assigned_lit, _ in self.assignment]
 
         return self.assignment
 
-    def run(self):
-        self.solver = "vsids"
-        self.heuristic = self.decide_vsids
-        print("run with vsids")
+    def print_restart_info(self):
+        print("run with", self.solver)
         print("Reward:", self.reward)
         print("UCB1:", self.UCB1)
         print("MOSS:", self.MOSS)
+
+    def run(self):
+        self.solver = "vsids"
+        self.heuristic = self.decide_vsids
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -392,10 +479,7 @@ class CDCL_SOLVER:
 
         self.solver = "lrb"
         self.heuristic = self.decide_q_v
-        print("run with lrb")
-        print("Reward:", self.reward)
-        print("UCB1:", self.UCB1)
-        print("MOSS:", self.MOSS)
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -407,10 +491,7 @@ class CDCL_SOLVER:
 
         self.solver = "chb"
         self.heuristic = self.decide_q_v
-        print("run with chb")
-        print("Reward:", self.reward)
-        print("UCB1:", self.UCB1)
-        print("MOSS:", self.MOSS)
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -421,23 +502,20 @@ class CDCL_SOLVER:
         self.n[2] += 1
 
         while len(self.assignment) < self.num_vars:
-            a = np.argmax(self.UCB1)
-            #a = np.argmax(self.MOSS)
+            if self.UCB == "UCB1":
+                a = np.argmax(self.UCB1)
+            if self.UCB == "MOSS":
+                a = np.argmax(self.MOSS)
             if a == 0:
                 self.solver = "vsids"
                 self.heuristic = self.decide_vsids
-                print("run with vsids")
             if a == 1:
                 self.solver = "lrb"
                 self.heuristic = self.decide_q_v
-                print("run with lrb")
             if a == 2:
                 self.solver = "chb"
                 self.heuristic = self.decide_q_v
-                print("run with chb")
-            print("Reward:", self.reward)
-            print("UCB1:", self.UCB1)
-            print("MOSS:", self.MOSS)
+            self.print_restart_info()
             reward = self._run()
             if len(self.assignment) >= self.num_vars:
                 return self.assignment
@@ -447,6 +525,8 @@ class CDCL_SOLVER:
             self.t += 1
             self.n[a] += 1
         return self.assignment
+
+    # UCB calculate
 
     def run_without_UCB(self, id):
         if id == 0:
@@ -461,7 +541,6 @@ class CDCL_SOLVER:
         while len(self.assignment) < self.num_vars:
             self._run()
         return self.assignment
-
 
     def update_reward(self, id, reward):
         self.reward[id] += (reward - self.reward[id]) / self.t
