@@ -4,7 +4,7 @@ from cdcl_chb import CDCL_CHB
 from cdcl import cdcl
 from utils import read_cnf
 from check import check
-from preprocess import *
+from preprocess import BVE, postprocess
 import time
 
 
@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument("-i", "--input", type=str, default="examples/and1.cnf")
     parser.add_argument('--h', type=str, default='lrb')
     parser.add_argument('-p', '--preprocess', type=int, default=0)
+    parser.add_argument('--subsumption', type=int, default=0, choices=[0, 1])
 
     return parser.parse_args()
 
@@ -28,7 +29,7 @@ def main(args):
     if args.preprocess:
         preprocess_start = time.time()
         ori_sentence = sentence.copy()
-        sentence, removed_val = BVE(sentence, num_vars, args.preprocess)
+        sentence, removed_val = BVE(sentence, num_vars, args.preprocess, args.subsumption)
         preprocess_end = time.time()
 
     if heuristic == 'lrb':
@@ -55,8 +56,8 @@ def main(args):
     if res is None:
         print("✘ No solution found")
     else:
-        if check(res, num_vars, sentence):
-            print(f"✔ Successfully found a solution: {res}")
+        print(f"✔ Successfully found a solution: {res}")
+        check(res, num_vars, sentence)
     if args.preprocess:
         print("Preprocess time: ", preprocess_end - preprocess_start)
         print("Postprocess time: ", postprocess_end - postprocess_start)
