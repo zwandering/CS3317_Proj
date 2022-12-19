@@ -18,7 +18,7 @@ class CDCL_SOLVER:
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
         self.assigned_lits = set()
-        self.conflict_limit = 2000000
+        self.conflict_limit = 20
         self.conflict = 0
         self.decisions = 0
 
@@ -423,6 +423,7 @@ class CDCL_SOLVER:
 
         while len(self.assignment) < self.num_vars:
             a = np.argmax(self.UCB1)
+            #a = np.argmax(self.MOSS)
             if a == 0:
                 self.solver = "vsids"
                 self.heuristic = self.decide_vsids

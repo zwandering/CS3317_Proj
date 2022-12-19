@@ -19,7 +19,7 @@ def main(args):
     # Create CDCL solver and solve it!
     
     solver = CDCL_SOLVER(sentence, num_vars)
-    #res = solver.run()
+    res = solver.run()
     res = solver.run_without_UCB(1)
 
     end = time.time()
