@@ -124,7 +124,7 @@ class CDCL_LRB:
         #     if value != 0: print(value)
         if len(self.assignment)==0:
             scores = self.init_vsids_scores()
-            assigned_lit = max(scores)
+            assigned_lit = max(scores, key=scores.get)
             return assigned_lit
 
         assigned_lits = np.asarray(list(self.assigned_lits))
