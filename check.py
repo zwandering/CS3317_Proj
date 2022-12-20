@@ -5,6 +5,7 @@ import argparse
 def check(res, num_vars, sentence):
     import numpy as np
     assignment_lit = []
+    flag = True
     for lit_tuple in res:
         assignment_lit.append(lit_tuple)
     abs_res = [abs(literal) for literal in assignment_lit]
@@ -19,6 +20,8 @@ def check(res, num_vars, sentence):
     for clause in sentence:
         if not any(literal in assignment_lit for literal in clause):
             print("error",clause)
+            flag = False
             # return False
-    print("pass check!")
+    if flag:
+        print("pass check!")
     return True
