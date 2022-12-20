@@ -63,7 +63,13 @@ class CDCL_SOLVER:
         self.init_vsids_scores()
 
     def mlr_feature_vector(self):
-        return list([1, self.mlr_prevLbd_1, self.mlr_prevLbd_2, self.mlr_prevLbd_3, self.mlr_prevLbd_1*self.mlr_prevLbd_2, self.mlr_prevLbd_1*self.mlr_prevLbd_3, self.mlr_prevLbd_2*self.mlr_prevLbd_3])
+        return list([1, 
+        self.mlr_prevLbd_1, 
+        self.mlr_prevLbd_2, 
+        self.mlr_prevLbd_3, 
+        self.mlr_prevLbd_1*self.mlr_prevLbd_2, 
+        self.mlr_prevLbd_1*self.mlr_prevLbd_3, 
+        self.mlr_prevLbd_2*self.mlr_prevLbd_3])
 
     def mlr_after_conflict(self, learned_clause):
         self.mlr_conflicts_since_last_restart += 1
@@ -90,12 +96,12 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_1 = nextLdb
 
     def mlr_after_BCP(self, is_conflict):
-        if (is_conflict) and (self.conflict > 3) and (self.mlr_conflicts_since_last_restart > 0):
+        if (not is_conflict) and (self.conflict > 3) and (self.mlr_conflicts_since_last_restart > 0):
             sigma = np.sqrt(self.mlr_m2/(self.conflict - 1))
             feature_vector = self.mlr_feature_vector()
             val = 0
             for i in range(len(self.mlr_theta)):
-                val += self.mlr_theta[i] * feature_vector[len(feature_vector) - 1 - i]
+                val += self.mlr_theta[i] * feature_vector[i]
             
             if val > self.mlr_mu + 3.08 * sigma:
                 return True
@@ -111,19 +117,11 @@ class CDCL_SOLVER:
                                     assigned_idx > lit_idx), 0)
             return level
         level_list = set()
-        max_list = set()
         for lit in learned_clause:
             level = get_level(lit)
             level_list.add(level)
-        level_list = list(level_list)
-        for i in range(len(level_list)):
-            for j in range(len(level_list)):
-                max_list.add(abs(level_list[i]-level_list[j]))
-        max_list = list(max_list)
-        return np.max(max_list)
-        
-        
-
+        return len(level_list)
+    
     # lrb & chb
     def decide_q_v(self):  # NOTE: `assignment` is for filtering assigned literals
         """Decide which variable to assign and whether to assign True or False."""
@@ -448,11 +446,15 @@ class CDCL_SOLVER:
 
                 # Restart                
                 if conflict_ante is not None:
-                    if self.mlr_after_BCP(True):
-                        reward = np.log2(self.decisions) / len(self.assignment)
-                        print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
-                        self.renew()                    
-                        return reward
+                    is_conflict = True
+                else:
+                    is_conflict = False
+
+                if self.mlr_after_BCP(is_conflict):
+                    reward = np.log2(self.decisions) / len(self.assignment)
+                    print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
+                    self.renew()                    
+                    return reward
 
         self.assignment = [assigned_lit for assigned_lit, _ in self.assignment]
 

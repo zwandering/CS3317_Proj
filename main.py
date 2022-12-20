@@ -1,5 +1,5 @@
 import argparse
-from cdcl_solver_restart_LDB import CDCL_SOLVER
+from cdcl_solver_restart_LDB_MAB import CDCL_SOLVER
 #from cdcl_solver_all_in_one import CDCL_SOLVER
 #from cdcl_solver_restart import CDCL_SOLVER
 #from cdcl_solver_UCB import CDCL_SOLVER
