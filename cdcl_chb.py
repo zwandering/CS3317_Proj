@@ -181,7 +181,6 @@ class CDCL_CHB:
         # Find the first-UIP by repeatedly applying resolution.
         learned_clause = set(conflict_ante.copy())
         conflict_side = []
-        reasons = set()
 
         while True:
             lits_at_conflict_level = assigned_lits[self.decided_idxs[-1]:]
@@ -195,7 +194,6 @@ class CDCL_CHB:
             while not is_resolved:
                 lit, clause_idx = assignment_tmp.pop()
                 if -lit in learned_clause:
-                    reasons.update(self.sentence[clause_idx])
                     # reasons = list(set(reasons + self.sentence[clause_idx]))
                     learned_clause = learned_clause.union(set(self.sentence[clause_idx]))
                     conflict_side.append(lit)
@@ -224,13 +222,10 @@ class CDCL_CHB:
             backtrack_level = next((level for level, assigned_idx in enumerate(self.decided_idxs) if
                                     assigned_idx > second_highest_assigned_idx), 0)
 
-        return backtrack_level, list(learned_clause), conflict_side, list(reasons)
-
+        return backtrack_level, list(learned_clause), conflict_side
 
     def backtrack(self, level):
         """Backtrack by deleting assigned variables."""
-        literals = self.assignment[self.decided_idxs[level]:]
-        # self.on_unassign(literals)
         del self.assignment[self.decided_idxs[level]:]
         del self.decided_idxs[level:]
 
@@ -285,7 +280,7 @@ class CDCL_CHB:
                 if self.alpha > 0.06: self.alpha -= 1e-6
                 # Learn conflict.
                 # time1 = time.time()
-                backtrack_level, learned_clause, conflict_side, reasons = self.analyze_conflict(conflict_ante)
+                backtrack_level, learned_clause, conflict_side = self.analyze_conflict(conflict_ante)
                 # time2 = time.time()
                 # print('analyze_conflict time: ' + str(time2 - time1))
                 # self.after_conflict_analysis(learned_clause, conflict_side, reasons)
