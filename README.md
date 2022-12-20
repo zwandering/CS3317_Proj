@@ -2,7 +2,7 @@
 
 重启机制有如下两个要点：
 1. 基于MAB重新选择Heuristic
-   1. reward计算公式：$r_t(a)=\frac{\log_2(decisions_t)}{decidedVars_t}}$
+   1. reward计算公式：$ r_t(a) =\frac{ \log_2 (decisions_t) }{ decidedVars_t }$
    2. 上界计算公式：
       1. UCB1: $UCB1(a)=\hat{r_t}(a)+\sqrt{\frac{4.\ln(t)}{n_t(a)}}$
       2. MOSS: $MOSS(a)=\hat{r_t}(a)+\sqrt{\frac{4}{n_t(a)}\ln(\max(\frac{t}{K.n_t(a)},1))}$
