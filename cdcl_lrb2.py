@@ -1,5 +1,9 @@
 import numpy as np
+import queue
+from sortedcontainers import SortedDict
 import time
+
+# implement a priority queue
 class CDCL_LRB:
     def __init__(self, sentence, num_vars):
         # Initialize class variables here
@@ -10,6 +14,11 @@ class CDCL_LRB:
         self.assigned_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.participated_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.q_v = np.zeros(2*self.num_vars+1, dtype = float)
+
+        self.priority_q = SortedDict()
+        for lit in range(-self.num_vars,self.num_vars+1):
+            self.priority_q.update({lit: -self.q_v[lit + self.num_vars]})
+
         self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
@@ -32,6 +41,8 @@ class CDCL_LRB:
         r = self.participated_v[assigned_lits+self.num_vars] / (interval+0.00001)
         rsr = self.resoned_v[assigned_lits + self.num_vars] / (interval+0.00001)
         self.q_v[assigned_lits + self.num_vars] = (1.0 - self.alpha) * self.q_v[assigned_lits + self.num_vars] + self.alpha * (r + rsr)
+        for lit in lits:
+            self.priority_q.update({lit:-self.q_v[lit+self.num_vars]})
 
         # for lit in literals:
         #     interval = self.LearntCounter - self.assigned_v[lit[0]]
@@ -127,13 +138,19 @@ class CDCL_LRB:
             assigned_lit = max(scores, key=scores.get)
             return assigned_lit
 
-        assigned_lits = np.asarray(list(self.assigned_lits))
-        assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
+        # assigned_lits = np.asarray(list(self.assigned_lits))
+        # assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
         # unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
         # print(unassigned_lits)
-        unassigned_q_v = self.q_v.copy()
-        unassigned_q_v[assigned_lits+self.num_vars] = float("-inf")
-        assigned_lit = np.argmax(unassigned_q_v) - self.num_vars
+
+        # unassigned_q_v = self.q_v.copy()
+        # unassigned_q_v[assigned_lits+self.num_vars] = float("-inf")
+        # assigned_lit = np.argmax(unassigned_q_v) - self.num_vars
+
+        unassigned_q_v = self.priority_q.copy()
+        assigned_lit, _ = unassigned_q_v.popitem(index = 0)
+        while assigned_lit not in self.unassigned_lits:
+            assigned_lit, _ = unassigned_q_v.popitem(index = 0)
         # print(assigned_lit, self.q_v[assigned_lit+self.num_vars])
         # assigned_lit = max(unassigned_q_v, key=unassigned_q_v.get)
 
@@ -288,6 +305,8 @@ class CDCL_LRB:
         # self.q_v[unassigned_lits] = 0.95**self.k * self.q_v[unassigned_lits]
         unassigned_lits = np.asarray(list(self.unassigned_lits))
         self.q_v[unassigned_lits+self.num_vars] = 0.95 ** self.k * self.q_v[unassigned_lits+self.num_vars]
+        for lit in unassigned_lits:
+            self.priority_q.update({lit:-self.q_v[lit+self.num_vars]})
         self.k = 0
 
     def backtrack(self, level):
