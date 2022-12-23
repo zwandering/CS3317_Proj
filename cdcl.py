@@ -10,7 +10,7 @@ def bcp(sentence, assignment, c2l_watch, l2c_watch, up_idx=0):  # NOTE: `up_idx`
         assert up_idx == 0
 
         for clause_idx, watched_lits in c2l_watch.items():
-            if len(watched_lits) == 1:
+            if len(watched_lits) == 1 and watched_lits[0] not in assigned_lits:
                 assigned_lits.add(watched_lits[0])
                 assignment.append((watched_lits[0], clause_idx))
 

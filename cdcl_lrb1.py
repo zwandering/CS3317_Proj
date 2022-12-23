@@ -13,7 +13,9 @@ class CDCL_LRB:
         self.resoned_v = np.zeros(2*self.num_vars+1, dtype = float)
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
-        self.assigned_lits = set()
+        self.assigned_lits_set = set()
+        self.assigned_lits_list = []
+        self.unassigned_lits = set(range(-self.num_vars, self.num_vars+1))
         self.k = 0
 
     def on_assign(self, lit):
@@ -22,7 +24,7 @@ class CDCL_LRB:
         self.resoned_v[lit+self.num_vars] = 0
 
     def on_unassign(self, literals):
-        lits = [a[0] for a in literals]
+        lits = literals
         assigned_lits = np.asarray(lits)
         # print(self.changed_lits)
         # print(assigned_lits)
@@ -50,8 +52,11 @@ class CDCL_LRB:
             assert up_idx == 0
 
             for clause_idx, watched_lits in self.c2l_watch.items():
-                if len(watched_lits) == 1 and watched_lits[0] not in self.assigned_lits:
-                    self.assigned_lits.add(watched_lits[0])
+                if len(watched_lits) == 1 and watched_lits[0] not in self.assigned_lits_set and -watched_lits[0] not in self.assigned_lits_set:
+                    self.assigned_lits_set.add(watched_lits[0])
+                    self.assigned_lits_list.append(watched_lits[0])
+                    self.unassigned_lits.remove(watched_lits[0])
+                    self.unassigned_lits.remove(-watched_lits[0])
                     self.assignment.append((watched_lits[0], clause_idx))
                     self.on_assign(watched_lits[0])
 
@@ -59,7 +64,10 @@ class CDCL_LRB:
         elif up_idx == len(self.assignment):  # we use `up_idx = len(assignment)` to indicate after-conflict BCP
             neg_first_uip = self.sentence[-1][-1]
             self.assignment.append((neg_first_uip, len(self.sentence) - 1))
-            self.assigned_lits.add(neg_first_uip)
+            self.assigned_lits_set.add(neg_first_uip)
+            self.assigned_lits_list.append(neg_first_uip)
+            self.unassigned_lits.remove(neg_first_uip)
+            self.unassigned_lits.remove(-neg_first_uip)
             self.on_assign(neg_first_uip, )
 
         # Propagate until no more unit clauses.
@@ -71,12 +79,12 @@ class CDCL_LRB:
                 if len(self.sentence[clause_idx]) == 1: return self.sentence[clause_idx]
 
                 another_lit = self.c2l_watch[clause_idx][0] if self.c2l_watch[clause_idx][1] == -lit else self.c2l_watch[clause_idx][1]
-                if another_lit in self.assigned_lits:
+                if another_lit in self.assigned_lits_set:
                     continue
 
                 is_new_lit_found = False
                 for tmp_lit in self.sentence[clause_idx]:
-                    if tmp_lit != -lit and tmp_lit != another_lit and -tmp_lit not in self.assigned_lits:
+                    if tmp_lit != -lit and tmp_lit != another_lit and -tmp_lit not in self.assigned_lits_set:
                         self.c2l_watch[clause_idx].remove(-lit)
                         self.c2l_watch[clause_idx].append(tmp_lit)
                         self.l2c_watch[-lit].remove(clause_idx)
@@ -85,10 +93,13 @@ class CDCL_LRB:
                         break
 
                 if not is_new_lit_found:
-                    if -another_lit in self.assigned_lits:
+                    if -another_lit in self.assigned_lits_set:
                         return self.sentence[clause_idx]  # NOTE: return a clause, not the index of a clause
                     else:
-                        self.assigned_lits.add(another_lit)
+                        self.assigned_lits_set.add(another_lit)
+                        self.assigned_lits_list.append(another_lit)
+                        self.unassigned_lits.remove(another_lit)
+                        self.unassigned_lits.remove(-another_lit)
                         self.assignment.append((another_lit, clause_idx))
                         self.on_assign(another_lit)
 
@@ -117,10 +128,10 @@ class CDCL_LRB:
         #     if value != 0: print(value)
         if len(self.assignment)==0:
             scores = self.init_vsids_scores()
-            assigned_lit = max(scores)
+            assigned_lit = max(scores, key=scores.get)
             return assigned_lit
 
-        assigned_lits = np.asarray(list(self.assigned_lits))
+        assigned_lits = np.asarray(self.assigned_lits_list)
         assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
         # unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
         # print(unassigned_lits)
@@ -165,12 +176,12 @@ class CDCL_LRB:
         backtrack_level, learned_clause = None, []
 
         # Check whether the conflict happens without making any decision.
-        assignment_tmp = self.assignment.copy()
+        # assignment_tmp = self.assignment.copy()
         if len(self.decided_idxs) == 0:
             return -1, [], [], []
 
         # For fast checking if a literal is assigned.
-        assigned_lits = [a[0] for a in assignment_tmp]
+        # assigned_lits = [a[0] for a in self.assignment]
 
         # Find the first-UIP by repeatedly applying resolution.
         learned_clause = set(conflict_ante.copy())
@@ -178,7 +189,8 @@ class CDCL_LRB:
         reasons = set()
 
         while True:
-            lits_at_conflict_level = assigned_lits[self.decided_idxs[-1]:]
+            # lits_at_conflict_level = assigned_lits[self.decided_idxs[-1]:]
+            lits_at_conflict_level = self.assigned_lits_list[self.decided_idxs[-1]:]
             clause_lits_at_conflict_level = [-lit for lit in learned_clause if -lit in lits_at_conflict_level]
 
             if len(clause_lits_at_conflict_level) <= 1:
@@ -186,8 +198,11 @@ class CDCL_LRB:
 
             # Apply the binary resolution rule.
             is_resolved = False
+            back_index = 1
             while not is_resolved:
-                lit, clause_idx = assignment_tmp.pop()
+                lit, clause_idx = self.assignment[-back_index]
+                # if lit == lit1 and clause_idx == clause_idx1: print(True)
+                back_index +=1
                 if -lit in learned_clause:
                     reasons.update(self.sentence[clause_idx])
                     # reasons = list(set(reasons + self.sentence[clause_idx]))
@@ -203,7 +218,7 @@ class CDCL_LRB:
         # Order the literals of the learned clause. This is for:
         # 1) determining the backtrack level;
         # 2) watching the negation of the first-UIP and the literal at the backtrack level.
-        lit_to_assigned_idx = {lit: assigned_lits.index(-lit) for lit in learned_clause}
+        lit_to_assigned_idx = {lit: self.assigned_lits_list.index(-lit) for lit in learned_clause}
         learned_clause = sorted(learned_clause, key=lambda lit: lit_to_assigned_idx[lit])
 
         # assigned_lits_set = set(assigned_lits)
@@ -272,22 +287,28 @@ class CDCL_LRB:
         #         self.q_v[lit] = 0.95 * self.q_v[lit]
 
     def lrb_decay(self):
-        assigned_lits = np.asarray(list(self.assigned_lits))
-        assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
-        # assigned_lits = np.union1d(assigned_lits, -assigned_lits)
-
-        unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
-        self.q_v[unassigned_lits] = 0.95**self.k * self.q_v[unassigned_lits]
+        # assigned_lits = np.asarray(list(self.assigned_lits))
+        # assigned_lits = np.concatenate((assigned_lits,-assigned_lits))
+        # # assigned_lits = np.union1d(assigned_lits, -assigned_lits)
+        #
+        # unassigned_lits = np.in1d(np.arange(-self.num_vars, self.num_vars + 1), assigned_lits, invert=True)
+        #
+        # self.q_v[unassigned_lits] = 0.95**self.k * self.q_v[unassigned_lits]
+        unassigned_lits = np.asarray(list(self.unassigned_lits))
+        self.q_v[unassigned_lits+self.num_vars] = 0.95 ** self.k * self.q_v[unassigned_lits+self.num_vars]
         self.k = 0
 
     def backtrack(self, level):
         """Backtrack by deleting assigned variables."""
-        literals = self.assignment[self.decided_idxs[level]:]
+        literals = self.assigned_lits_list[self.decided_idxs[level]:]
         self.on_unassign(literals)
         del self.assignment[self.decided_idxs[level]:]
+        del self.assigned_lits_list[self.decided_idxs[level]:]
         del self.decided_idxs[level:]
         for lit in literals:
-            self.assigned_lits.remove(lit[0])
+            self.assigned_lits_set.remove(lit)
+            self.unassigned_lits.add(lit)
+            self.unassigned_lits.add(-lit)
         # self.assigned_lits = set([a[0] for a in self.assignment])
 
     def add_learned_clause(self, learned_clause):
@@ -328,7 +349,10 @@ class CDCL_LRB:
             assigned_lit = self.decide_q_v()
             self.decided_idxs.append(len(self.assignment))
             self.assignment.append((assigned_lit, None))
-            self.assigned_lits.add(assigned_lit)
+            self.assigned_lits_set.add(assigned_lit)
+            self.assigned_lits_list.append(assigned_lit)
+            self.unassigned_lits.remove(assigned_lit)
+            self.unassigned_lits.remove(-assigned_lit)
             self.on_assign(assigned_lit)
 
             # print('time1: '+str(time1-start))

@@ -1,5 +1,5 @@
 import argparse
-from cdcl_lrb import  CDCL_LRB
+from cdcl_lrb1 import  CDCL_LRB
 from cdcl_chb import  CDCL_CHB
 from cdcl import cdcl
 from utils import read_cnf
