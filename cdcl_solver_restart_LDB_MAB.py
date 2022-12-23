@@ -21,6 +21,8 @@ class CDCL_SOLVER:
         self.mlr_m = np.zeros(len_fv, dtype=float)
         self.mlr_v = np.zeros(len_fv, dtype=float)
 
+        self.assigned_level = {}
+
 
         # UCB
         self.reward = np.zeros(3,dtype=float)
@@ -61,6 +63,11 @@ class CDCL_SOLVER:
         self.vsids_scores = {}
         self.decay=0.95
         self.init_vsids_scores()
+        self.init_assigned_level()
+
+    def init_assigned_level(self):
+        for lit in range(-self.num_vars, self.num_vars + 1):
+            self.assigned_level[lit] = 0
 
     def mlr_feature_vector(self):
         return list([1, 
@@ -72,6 +79,7 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_2*self.mlr_prevLbd_3])
 
     def mlr_after_conflict(self, learned_clause):
+        #start = time.time()
         self.mlr_conflicts_since_last_restart += 1
         nextLdb = self.mlr_Ldb(learned_clause)
         delta = nextLdb - self.mlr_mu
@@ -94,8 +102,10 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_3 = self.mlr_prevLbd_2
         self.mlr_prevLbd_2 = self.mlr_prevLbd_1
         self.mlr_prevLbd_1 = nextLdb
+        #print("time cost:", time.time()-start)
 
     def mlr_after_BCP(self, is_conflict):
+        #start = time.time()
         if (not is_conflict) and (self.conflict > 3) and (self.mlr_conflicts_since_last_restart > 0):
             sigma = np.sqrt(self.mlr_m2/(self.conflict - 1))
             feature_vector = self.mlr_feature_vector()
@@ -103,23 +113,17 @@ class CDCL_SOLVER:
             for i in range(len(self.mlr_theta)):
                 val += self.mlr_theta[i] * feature_vector[i]
             
-            if val > self.mlr_mu + 3.08 * sigma:
+            if val > self.mlr_mu + 2.58 * sigma:
                 return True
+        #print("time cost:", time.time()-start)
         return False
 
     def mlr_Ldb(self, learned_clause):
-        def get_level(lit):
-            assignment_tmp = self.assignment.copy()
-            assigned_lits = [a[0] for a in assignment_tmp]
-            lit_to_assigned_idx = {lit: assigned_lits.index(-lit) for lit in learned_clause}
-            lit_idx = lit_to_assigned_idx[lit]
-            level = next((level for level, assigned_idx in enumerate(self.decided_idxs) if
-                                    assigned_idx > lit_idx), 0)
-            return level
+        #start = time.time()
         level_list = set()
         for lit in learned_clause:
-            level = get_level(lit)
-            level_list.add(level)
+            level_list.add(self.assigned_level[lit])
+        #print("time cost:", time.time()-start)
         return len(level_list)
     
     # lrb & chb
@@ -232,7 +236,7 @@ class CDCL_SOLVER:
 
     def bcp(self, up_idx=0):
         """Propagate unit clauses with watched literals."""
-
+        level = up_idx
         # For fast checking if a literal is assigned.
         self.assigned_lits = set([a[0] for a in self.assignment])
 
@@ -244,6 +248,7 @@ class CDCL_SOLVER:
                 if len(watched_lits) == 1 and watched_lits[0] not in self.assigned_lits:
                     self.assigned_lits.add(watched_lits[0])
                     self.assignment.append((watched_lits[0], clause_idx))
+                    self.assigned_level[watched_lits[0]] = level
                     if self.solver == "lrb":    # NOTE: add for lrb
                         self.on_assign(watched_lits[0])
 
@@ -252,6 +257,7 @@ class CDCL_SOLVER:
             neg_first_uip = self.sentence[-1][-1]
             self.assignment.append((neg_first_uip, len(self.sentence) - 1))
             self.assigned_lits.add(neg_first_uip)
+            self.assigned_level[neg_first_uip] = level
             if self.solver == "lrb":    # NOTE: add for lrb
                 self.on_assign(neg_first_uip, )
 
@@ -283,6 +289,7 @@ class CDCL_SOLVER:
                     else:
                         self.assigned_lits.add(another_lit)
                         self.assignment.append((another_lit, clause_idx))
+                        self.assigned_level[another_lit] = level
                         if self.solver == "lrb":    # NOTE: add for lrb
                             self.on_assign(another_lit)
 
@@ -375,7 +382,6 @@ class CDCL_SOLVER:
         self.c2l_watch, self.l2c_watch = self.init_watch()
         self.assignment, self.decided_idxs = [], []
         self.assigned_lits = set()
-        self.conflict_limit = 20
         self.conflict = 0
         self.decisions = 0
         # lrb & chb
@@ -389,8 +395,6 @@ class CDCL_SOLVER:
         self.num_conflicts = 0
         self.multi = 1.0
         # vsids
-        self.vsids_scores = {}
-        self.decay=0.95
         self.init_vsids_scores()
 
     def _run(self):
@@ -411,6 +415,7 @@ class CDCL_SOLVER:
             assigned_lit = self.heuristic()
             self.decided_idxs.append(len(self.assignment))
             self.assignment.append((assigned_lit, None))
+            self.assigned_level[assigned_lit] = self.decided_idxs[-1]
             if self.solver == "lrb":
                 self.on_assign(assigned_lit)
             self.decisions += 1
@@ -545,9 +550,12 @@ class CDCL_SOLVER:
         return self.assignment
 
     def update_reward(self, id, reward):
-        self.reward[id] += (reward - self.reward[id]) / self.t
+        #start = time.time()
+        self.reward[id] += (reward - self.reward[id]) / self.n[id]
+        #print("time:", time.time()-start)
 
     def update_UCB1(self):
+        #start = time.time()
         ln_t = np.log(self.t)
         len_ln_t = len(str(ln_t))
         ln_t /= 10**len_ln_t
@@ -555,8 +563,10 @@ class CDCL_SOLVER:
         self.UCB1[0] = self.reward[0] + np.sqrt(ln_t / self.n[0])
         self.UCB1[1] = self.reward[1] + np.sqrt(ln_t / self.n[1])
         self.UCB1[2] = self.reward[2] + np.sqrt(ln_t / self.n[2])
+        #print("time:", time.time()-start)
 
     def update_MOSS(self):
+        #start = time.time()
         n0 = self.n[0]
         n1 = self.n[1]
         n2 = self.n[2]
@@ -570,3 +580,4 @@ class CDCL_SOLVER:
         self.MOSS[0] = self.reward[0] + np.sqrt((4/self.n[0]) * np.log(np.max([1, (self.t / n0)])))
         self.MOSS[1] = self.reward[1] + np.sqrt((4/self.n[1]) * np.log(np.max([1, (self.t / n1)])))
         self.MOSS[2] = self.reward[2] + np.sqrt((4/self.n[2]) * np.log(np.max([1, (self.t / n2)])))
+        #print("time:", time.time()-start)
