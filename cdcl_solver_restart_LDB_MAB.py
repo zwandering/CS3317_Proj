@@ -2,7 +2,10 @@ import numpy as np
 import time
 
 class CDCL_SOLVER:
-    def __init__(self, sentence, num_vars):
+    def __init__(self, sentence, num_vars, restart, MAB, heuristic):
+        self.restart = restart
+        self.MAB = MAB
+        
         # MLR
         self.mlr_alpha = 0.001
         self.mlr_epsilon = 0.00000001
@@ -15,12 +18,10 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_1 = 0
         self.mlr_mu = 0
         self.mlr_m2 = 0
-
         len_fv = len(self.mlr_feature_vector())
         self.mlr_theta = np.zeros(len_fv, dtype=float)
         self.mlr_m = np.zeros(len_fv, dtype=float)
         self.mlr_v = np.zeros(len_fv, dtype=float)
-
         self.assigned_level = {}
 
 
@@ -29,10 +30,13 @@ class CDCL_SOLVER:
         self.UCB1 = np.zeros(3,dtype=float)
         self.MOSS = np.zeros(3,dtype=float)
         self.n = np.ones(3,dtype=float)
-        self.UCB = "MOSS"
-        self.solver = "lrb"
-        self.heuristic = self.decide_q_v
         self.t = 1
+        if self.MAB == 1:
+            self.UCB = "MOSS"
+        if self.MAB == 2:
+            self.UCB = "UCB1"
+
+        
 
         # Initialize class variables here
         self.sentence = sentence
@@ -44,7 +48,15 @@ class CDCL_SOLVER:
         self.conflict_limit = 20
         self.conflict = 0
         self.decisions = 0
-
+        if heuristic == 0:
+            self.solver = "vsids"
+            self.heuristic = self.decide_vsids
+        if heuristic == 1:
+            self.solver = "lrb"
+            self.heuristic = self.decide_q_v
+        if heuristic == 2:
+            self.solver = "chb"
+            self.heuristic = self.decide_q_v
         
         # lrb & chb
         self.alpha = 0.4
@@ -79,7 +91,6 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_2*self.mlr_prevLbd_3])
 
     def mlr_after_conflict(self, learned_clause):
-        #start = time.time()
         self.mlr_conflicts_since_last_restart += 1
         nextLdb = self.mlr_Ldb(learned_clause)
         delta = nextLdb - self.mlr_mu
@@ -102,10 +113,9 @@ class CDCL_SOLVER:
         self.mlr_prevLbd_3 = self.mlr_prevLbd_2
         self.mlr_prevLbd_2 = self.mlr_prevLbd_1
         self.mlr_prevLbd_1 = nextLdb
-        #print("time cost:", time.time()-start)
+        
 
     def mlr_after_BCP(self, is_conflict):
-        #start = time.time()
         if (not is_conflict) and (self.conflict > 3) and (self.mlr_conflicts_since_last_restart > 0):
             sigma = np.sqrt(self.mlr_m2/(self.conflict - 1))
             feature_vector = self.mlr_feature_vector()
@@ -115,15 +125,12 @@ class CDCL_SOLVER:
             
             if val > self.mlr_mu + 2.58 * sigma:
                 return True
-        #print("time cost:", time.time()-start)
         return False
 
     def mlr_Ldb(self, learned_clause):
-        #start = time.time()
         level_list = set()
         for lit in learned_clause:
             level_list.add(self.assigned_level[lit])
-        #print("time cost:", time.time()-start)
         return len(level_list)
     
     # lrb & chb
@@ -449,17 +456,17 @@ class CDCL_SOLVER:
                 if self.solver == "chb":
                     self.update_q_v()
 
-                # Restart                
-                if conflict_ante is not None:
-                    is_conflict = True
-                else:
-                    is_conflict = False
-
-                if self.mlr_after_BCP(is_conflict):
-                    reward = np.log2(self.decisions) / len(self.assignment)
-                    print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
-                    self.renew()                    
-                    return reward
+                # Restart
+                if self.restart == 1:  
+                    if conflict_ante is not None:
+                        is_conflict = True
+                    else:
+                        is_conflict = False
+                    if self.mlr_after_BCP(is_conflict):
+                        reward = np.log2(self.decisions) / len(self.assignment)
+                        #print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
+                        self.renew()                    
+                        return reward
 
         self.assignment = [assigned_lit for assigned_lit, _ in self.assignment]
 
@@ -471,40 +478,46 @@ class CDCL_SOLVER:
         print("UCB1:", self.UCB1)
         print("MOSS:", self.MOSS)
 
-    def run(self):
+    def run_restart_UCB(self):
         self.solver = "vsids"
         self.heuristic = self.decide_vsids
-        self.print_restart_info()
+        #self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
         self.update_reward(0, reward)
-        self.update_UCB1()
-        self.update_MOSS()
+        if self.UCB == "UCB1":
+            self.update_UCB1()
+        if self.UCB == "MOSS":
+            self.update_MOSS()
         self.t += 1
         self.n[0] += 1
 
         self.solver = "lrb"
         self.heuristic = self.decide_q_v
-        self.print_restart_info()
+        #self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
         self.update_reward(1, reward)
-        self.update_UCB1()
-        self.update_MOSS()
+        if self.UCB == "UCB1":
+            self.update_UCB1()
+        if self.UCB == "MOSS":
+            self.update_MOSS()
         self.t += 1
         self.n[1] += 1
 
         self.solver = "chb"
         self.heuristic = self.decide_q_v
-        self.print_restart_info()
+        #self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
         self.update_reward(2, reward)
-        self.update_UCB1()
-        self.update_MOSS()
+        if self.UCB == "UCB1":
+            self.update_UCB1()
+        if self.UCB == "MOSS":
+            self.update_MOSS()
         self.t += 1
         self.n[2] += 1
 
@@ -522,7 +535,7 @@ class CDCL_SOLVER:
             if a == 2:
                 self.solver = "chb"
                 self.heuristic = self.decide_q_v
-            self.print_restart_info()
+            #self.print_restart_info()
             reward = self._run()
             if len(self.assignment) >= self.num_vars:
                 return self.assignment
@@ -533,29 +546,34 @@ class CDCL_SOLVER:
             self.n[a] += 1
         return self.assignment
 
-    # UCB calculate
-
-    def run_without_UCB(self, id):
-        if id == 0:
-            self.solver = "vsids"
-            self.heuristic = self.decide_vsids
-        if id == 1:
-            self.solver = "lrb"
-            self.heuristic = self.decide_q_v
-        if id == 2:
-            self.solver = "chb"
-            self.heuristic = self.decide_q_v
+    def run_restart(self):
         while len(self.assignment) < self.num_vars:
             self._run()
-        return self.assignment
+            if len(self.assignment) >= self.num_vars:
+                return self.assignment
+            self.renew()
+
+    def run_no_restart(self):
+        return self._run()
+
+    def run(self):
+        if self.restart == 1:
+            if self.MAB == 1 or self.MAB == 2:
+                print("Run solver with restarting method and choosing heuristic with UCB: ", self.UCB)
+                return self.run_restart_UCB()
+            else:
+                print("Run solver with restarting method and choosing heuristic : ", self.solver)
+                return self.run_restart()
+        else:
+            print("Run solver without restarting method and choosing heuristic : ", self.solver)
+            return self.run_no_restart()
+
+    # UCB calculate
 
     def update_reward(self, id, reward):
-        #start = time.time()
         self.reward[id] += (reward - self.reward[id]) / self.n[id]
-        #print("time:", time.time()-start)
 
     def update_UCB1(self):
-        #start = time.time()
         ln_t = np.log(self.t)
         len_ln_t = len(str(ln_t))
         ln_t /= 10**len_ln_t
@@ -563,10 +581,8 @@ class CDCL_SOLVER:
         self.UCB1[0] = self.reward[0] + np.sqrt(ln_t / self.n[0])
         self.UCB1[1] = self.reward[1] + np.sqrt(ln_t / self.n[1])
         self.UCB1[2] = self.reward[2] + np.sqrt(ln_t / self.n[2])
-        #print("time:", time.time()-start)
-
+        
     def update_MOSS(self):
-        #start = time.time()
         n0 = self.n[0]
         n1 = self.n[1]
         n2 = self.n[2]
@@ -580,4 +596,3 @@ class CDCL_SOLVER:
         self.MOSS[0] = self.reward[0] + np.sqrt((4/self.n[0]) * np.log(np.max([1, (self.t / n0)])))
         self.MOSS[1] = self.reward[1] + np.sqrt((4/self.n[1]) * np.log(np.max([1, (self.t / n1)])))
         self.MOSS[2] = self.reward[2] + np.sqrt((4/self.n[2]) * np.log(np.max([1, (self.t / n2)])))
-        #print("time:", time.time()-start)

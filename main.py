@@ -10,6 +10,9 @@ import time
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", type=str, default="examples/and1.cnf")
+    parser.add_argument("-d", "--decide", type=int, default=0)  # 0->vsids, 1->lrb, 2->chb
+    parser.add_argument("-r", "--restart", type=int, default=1) # 0->no restart, 1->restart
+    parser.add_argument("-m", "--MAB", type=int, default=1)     # 0->no MAB rechoosing, 1->MOSS, 2->UCB1
     return parser.parse_args()
 
 def main(args):
@@ -19,9 +22,8 @@ def main(args):
     start = time.time()
     # Create CDCL solver and solve it!
     
-    solver = CDCL_SOLVER(sentence, num_vars)
+    solver = CDCL_SOLVER(sentence, num_vars, args.restart, args.MAB, args.decide)
     res = solver.run()
-    #res = solver.run_without_UCB(0)
 
     end = time.time()
     t = end - start
