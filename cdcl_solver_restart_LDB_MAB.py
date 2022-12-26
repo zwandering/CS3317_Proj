@@ -169,12 +169,14 @@ class CDCL_SOLVER:
     def after_conflict_analysis(self, learned_clause, conflict_side, reasons):
         self.LearntCounter = self.LearntCounter + 1
         tmp1 = np.concatenate((learned_clause, conflict_side))
+        tmp1 = tmp1.astype(int)
         self.participated_v[tmp1 + self.num_vars] = self.participated_v[tmp1 + self.num_vars] + 1.
         if self.alpha > 0.06:
             self.alpha = self.alpha - 1e-6
 
         reasons_lits = np.asarray(reasons)
         tmp2 = reasons_lits[np.isin(reasons_lits, learned_clause, invert=True)] # 此处可以改为in1d可能会快一点
+        tmp2 = tmp2.astype(int)
         self.resoned_v[tmp2+self.num_vars] += 1.
 
         # 使用numpy提高代码运行速度
@@ -464,7 +466,7 @@ class CDCL_SOLVER:
                         is_conflict = False
                     if self.mlr_after_BCP(is_conflict):
                         reward = np.log2(self.decisions) / len(self.assignment)
-                        #print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
+                        print("assignment_len:", len(self.assignment), "sentence_len:", len(self.sentence))
                         self.renew()                    
                         return reward
 
@@ -481,7 +483,7 @@ class CDCL_SOLVER:
     def run_restart_UCB(self):
         self.solver = "vsids"
         self.heuristic = self.decide_vsids
-        #self.print_restart_info()
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -495,7 +497,7 @@ class CDCL_SOLVER:
 
         self.solver = "lrb"
         self.heuristic = self.decide_q_v
-        #self.print_restart_info()
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -509,7 +511,7 @@ class CDCL_SOLVER:
 
         self.solver = "chb"
         self.heuristic = self.decide_q_v
-        #self.print_restart_info()
+        self.print_restart_info()
         reward = self._run()
         if len(self.assignment) >= self.num_vars:
             return self.assignment
@@ -535,7 +537,7 @@ class CDCL_SOLVER:
             if a == 2:
                 self.solver = "chb"
                 self.heuristic = self.decide_q_v
-            #self.print_restart_info()
+            self.print_restart_info()
             reward = self._run()
             if len(self.assignment) >= self.num_vars:
                 return self.assignment
